@@ -74,10 +74,12 @@ runs:
 
     - name: Apply timezone on Windows
       if: runner.os == 'Windows'
-      shell: bash
+      # pwsh rather than bash: Git Bash rewrites the "/s" switch into the
+      # drive path "S:/" before tzutil sees it.
+      shell: pwsh
       env:
         TARGET_TZ: ${{ inputs.timezone-windows }}
-      run: tzutil /s "$TARGET_TZ"
+      run: tzutil /s "$env:TARGET_TZ"
 
     - name: Show resulting time
       shell: bash
