@@ -82,4 +82,4 @@ runs:
     - name: Show resulting time
       shell: bash
       run: |
-      printf 'Timezone set. Current time: %s\n' "$(date)"
+        printf 'Timezone set. Current time: %s\n' "$(date)"
