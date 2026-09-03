@@ -57,20 +57,40 @@ runs:
       shell: bash
       env:
         TARGET_TZ: ${{ inputs.timezone-macos }}
-      # systemsetup returns 0 regardless of outcome, so confirm the change
-      # by reading the value back and comparing.
+      # systemsetup returns 0 regardless of outcome, and on recent macOS it
+      # intermittently logs "### Error:-99 ... InternetServices.m" and leaves
+      # the zone unchanged. So... validate the name against the zoneinfo
+      # database up front, retry systemsetup while confirming the result via
+      # the /etc/localtime symlink it maintains, and if it keeps failing,
+      # write that symlink directly.
       run: |
-        sudo systemsetup -settimezone "$TARGET_TZ"
-        reported="$(sudo systemsetup -gettimezone)"
+        zone_file="/var/db/timezone/zoneinfo/$TARGET_TZ"
 
-        case "$reported" in
-          "Time Zone: $TARGET_TZ")
-            ;;
-          *)
-            echo "::error::Failed to set macOS timezone to '$TARGET_TZ' ($reported). List valid names with: sudo systemsetup -listtimezones"
-            exit 1
-            ;;
-        esac
+        if [ ! -e "$zone_file" ]; then
+          echo "::error::Invalid timezone '$TARGET_TZ'. List valid names with: sudo systemsetup -listtimezones"
+          exit 1
+        fi
+
+        applied() {
+          [ "$(readlink -f /etc/localtime 2>/dev/null)" = "$(readlink -f "$zone_file")" ]
+        }
+
+        for attempt in 1 2 3 4 5; do
+          sudo systemsetup -settimezone "$TARGET_TZ" || true
+          if applied; then
+            exit 0
+          fi
+          echo "systemsetup attempt $attempt did not apply '$TARGET_TZ' ($(sudo systemsetup -gettimezone)); retrying"
+          sleep 2
+        done
+
+        echo "systemsetup kept failing; pointing /etc/localtime at $zone_file directly"
+        sudo ln -sfn "$zone_file" /etc/localtime
+
+        if ! applied; then
+          echo "::error::Failed to set macOS timezone to '$TARGET_TZ' ($(sudo systemsetup -gettimezone))"
+          exit 1
+        fi
 
     - name: Apply timezone on Windows
       if: runner.os == 'Windows'
