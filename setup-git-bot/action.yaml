@@ -1,0 +1,13 @@
+name: 'Setup Git Bot User'
+description: 'Configures git to use a bot user for commits / releases'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Release Email
+      shell: bash
+      run: git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Setup Release Username
+      shell: bash
+      run: git config --global user.name "github-actions[bot]"
