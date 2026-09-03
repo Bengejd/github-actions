@@ -1,0 +1,85 @@
+# Cross-platform timezone setter for GitHub Actions runners.
+# Based on the idea behind https://github.com/szenius/set-timezone, reimplemented.
+
+name: "Set Timezone 🕐"
+description: "Configures the runner's system timezone on Linux, macOS, and Windows"
+
+inputs:
+  timezone-linux:
+    description: "IANA timezone name applied on Linux runners (example: Asia/Singapore)."
+    required: false
+    default: "UTC"
+  timezone-macos:
+    description: "IANA timezone name applied on macOS runners (example: Asia/Singapore)."
+    required: false
+    default: "GMT"
+  timezone-windows:
+    description: "Windows timezone identifier applied on Windows runners (example: Singapore Standard Time). Run `tzutil /l` to see the valid list."
+    required: false
+    default: "UTC"
+
+runs:
+  using: composite
+  steps:
+    - name: Apply timezone on Linux
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        TARGET_TZ: ${{ inputs.timezone-linux }}
+      # Preferred path is timedatectl, but it depends on systemd and polkit.
+      # Inside containers and on some self-hosted machines it fails with
+      # "Failed to set time zone: Access denied". When that happens, replicate
+      # what timedatectl would have done: point /etc/localtime at the zoneinfo
+      # file and record the name in /etc/timezone.
+      run: |
+        as_root() {
+          if [ "$(id -u)" = "0" ]; then
+            "$@"
+          else
+            sudo "$@"
+          fi
+        }
+
+        if ! as_root timedatectl set-timezone "$TARGET_TZ" 2>/dev/null; then
+          zone_file="/usr/share/zoneinfo/$TARGET_TZ"
+
+          if [ ! -e "$zone_file" ]; then
+            echo "::error::Invalid timezone '$TARGET_TZ'. List valid names with: timedatectl list-timezones"
+            exit 1
+          fi
+
+          as_root ln -sf "$zone_file" /etc/localtime
+          printf '%s\n' "$TARGET_TZ" | as_root tee /etc/timezone >/dev/null
+        fi
+
+    - name: Apply timezone on macOS
+      if: runner.os == 'macOS'
+      shell: bash
+      env:
+        TARGET_TZ: ${{ inputs.timezone-macos }}
+      # systemsetup returns 0 regardless of outcome, so confirm the change
+      # by reading the value back and comparing.
+      run: |
+        sudo systemsetup -settimezone "$TARGET_TZ"
+        reported="$(sudo systemsetup -gettimezone)"
+
+        case "$reported" in
+          "Time Zone: $TARGET_TZ")
+            ;;
+          *)
+            echo "::error::Failed to set macOS timezone to '$TARGET_TZ' ($reported). List valid names with: sudo systemsetup -listtimezones"
+            exit 1
+            ;;
+        esac
+
+    - name: Apply timezone on Windows
+      if: runner.os == 'Windows'
+      shell: bash
+      env:
+        TARGET_TZ: ${{ inputs.timezone-windows }}
+      run: tzutil /s "$TARGET_TZ"
+
+    - name: Show resulting time
+      shell: bash
+      run: |
+      printf 'Timezone set. Current time: %s\n' "$(date)"
