@@ -42,17 +42,17 @@ jobs:
 
       - uses: ./set-timezone
         with:
-          timezone-linux: Asia/Singapore
-          timezone-macos: Asia/Singapore
-          timezone-windows: Singapore Standard Time
+          timezone-linux: Asia/Tokyo
+          timezone-macos: Asia/Tokyo
+          timezone-windows: Tokyo Standard Time
 
       - name: Assert Linux timezone
         if: runner.os == 'Linux'
         shell: bash
         run: |
           actual="$(timedatectl show --property=Timezone --value)"
-          [ "$actual" = "Asia/Singapore" ] || { echo "::error::Expected Asia/Singapore, got '$actual'"; exit 1; }
-          [ "$(date +%z)" = "+0800" ] || { echo "::error::date reports offset $(date +%z), expected +0800"; exit 1; }
+          [ "$actual" = "Asia/Tokyo" ] || { echo "::error::Expected Asia/Tokyo, got '$actual'"; exit 1; }
+          [ "$(date +%z)" = "+0900" ] || { echo "::error::date reports offset $(date +%z), expected +0900"; exit 1; }
 
       - name: Assert macOS timezone
         if: runner.os == 'macOS'
@@ -60,16 +60,16 @@ jobs:
         run: |
           sudo systemsetup -gettimezone
           actual="$(readlink -f /etc/localtime)"
-          expected="$(readlink -f /var/db/timezone/zoneinfo/Asia/Singapore)"
+          expected="$(readlink -f /var/db/timezone/zoneinfo/Asia/Tokyo)"
           [ "$actual" = "$expected" ] || { echo "::error::/etc/localtime points at '$actual', expected '$expected'"; exit 1; }
-          [ "$(date +%z)" = "+0800" ] || { echo "::error::date reports offset $(date +%z), expected +0800"; exit 1; }
+          [ "$(date +%z)" = "+0900" ] || { echo "::error::date reports offset $(date +%z), expected +0900"; exit 1; }
 
       - name: Assert Windows timezone
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $actual = tzutil /g
-          if ($actual -ne "Singapore Standard Time") { Write-Output "::error::Expected Singapore Standard Time, got '$actual'"; exit 1 }
+          if ($actual -ne "Tokyo Standard Time") { Write-Output "::error::Expected Tokyo Standard Time, got '$actual'"; exit 1 }
 
   default-timezone:
     name: Default timezone (${{ matrix.os }})
@@ -85,9 +85,9 @@ jobs:
       # changed something rather than observing the runner's initial state.
       - uses: ./set-timezone
         with:
-          timezone-linux: Asia/Tokyo
-          timezone-macos: Asia/Tokyo
-          timezone-windows: Tokyo Standard Time
+          timezone-linux: Australia/Brisbane
+          timezone-macos: Australia/Brisbane
+          timezone-windows: E. Australia Standard Time
 
       - uses: ./set-timezone
 
@@ -164,12 +164,12 @@ jobs:
 
       - uses: ./set-timezone
         with:
-          timezone-linux: Asia/Singapore
+          timezone-linux: Africa/Nairobi
 
       - name: Assert fallback result
         shell: bash
         run: |
           target="$(readlink -f /etc/localtime)"
-          [ "$target" = "/usr/share/zoneinfo/Asia/Singapore" ] || { echo "::error::/etc/localtime points at '$target'"; exit 1; }
-          [ "$(cat /etc/timezone)" = "Asia/Singapore" ] || { echo "::error::/etc/timezone contains '$(cat /etc/timezone)'"; exit 1; }
-          [ "$(date +%z)" = "+0800" ] || { echo "::error::date reports offset $(date +%z), expected +0800"; exit 1; }
+          [ "$target" = "/usr/share/zoneinfo/Africa/Nairobi" ] || { echo "::error::/etc/localtime points at '$target'"; exit 1; }
+          [ "$(cat /etc/timezone)" = "Africa/Nairobi" ] || { echo "::error::/etc/timezone contains '$(cat /etc/timezone)'"; exit 1; }
+          [ "$(date +%z)" = "+0300" ] || { echo "::error::date reports offset $(date +%z), expected +0300"; exit 1; }

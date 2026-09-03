@@ -6,15 +6,15 @@ description: "Configures the runner's system timezone on Linux, macOS, and Windo
 
 inputs:
   timezone-linux:
-    description: "IANA timezone name applied on Linux runners (example: Asia/Singapore)."
+    description: "IANA timezone name applied on Linux runners (example: America/New_York)."
     required: false
     default: "UTC"
   timezone-macos:
-    description: "IANA timezone name applied on macOS runners (example: Asia/Singapore)."
+    description: "IANA timezone name applied on macOS runners (example: Europe/Berlin)."
     required: false
     default: "GMT"
   timezone-windows:
-    description: "Windows timezone identifier applied on Windows runners (example: Singapore Standard Time). Run `tzutil /l` to see the valid list."
+    description: "Windows timezone identifier applied on Windows runners (example: Eastern Standard Time). Run `tzutil /l` to see the valid list."
     required: false
     default: "UTC"
 
