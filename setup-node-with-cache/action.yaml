@@ -1,0 +1,152 @@
+name: 'Setup Node.js, Package Manager & Install Dependencies'
+description: >-
+  Installs Node.js, pins npm/yarn/pnpm to a chosen version, restores the
+  dependency cache keyed on the lockfile, runs a frozen-lockfile install, and
+  optionally applies patch-package patches. Supports monorepos via
+  working-directory. If registry-token is provided, also authenticates to a
+  private npm registry (GitHub Packages by default) and maps any registry-scope
+  packages to it.
+
+inputs:
+  node-version:
+    description: 'Node.js release to provision'
+    required: false
+    default: '24'
+  package-manager:
+    description: 'Package manager to use (npm, yarn, or pnpm)'
+    required: false
+    default: 'pnpm'
+  package-manager-version:
+    description: 'Release of the package manager. "latest" picks the newest available.'
+    required: false
+    default: 'latest'
+  working-directory:
+    description: 'Folder that contains package.json'
+    required: false
+    default: '.'
+  patch-package:
+    description: 'Run patch-package once dependencies are installed'
+    required: false
+    default: 'false'
+  registry-token:
+    description: >-
+      Auth token for the private npm registry. When empty, no registry
+      authentication is configured.
+    required: false
+    default: ''
+  registry-scope:
+    description: >-
+      npm scope(s) to resolve from the private registry, e.g. "@orgName".
+      Accepts a comma or space-separated list. Only applied when registry-token
+      is also set.
+    required: false
+    default: ''
+  registry-host:
+    description: >-
+      Hostname of the private npm registry, without protocol or trailing slash.
+    required: false
+    default: 'npm.pkg.github.com'
+
+runs:
+  using: 'composite'
+  steps:
+    - id: opts
+      name: Resolve options
+      description: 'Resolve required options for the action, just in case the user did not set them.'
+      shell: bash
+      env:
+        RAW_NODE: ${{ inputs.node-version }}
+        RAW_MANAGER: ${{ inputs.package-manager }}
+        RAW_MANAGER_VERSION: ${{ inputs.package-manager-version }}
+        RAW_PROJECT_DIR: ${{ inputs.working-directory }}
+        RAW_PATCH: ${{ inputs.patch-package }}
+      run: |
+        emit() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+        emit node            "${RAW_NODE:-24}"
+        emit manager         "${RAW_MANAGER:-pnpm}"
+        emit manager_version "${RAW_MANAGER_VERSION:-11.10.0}"
+        emit project_dir     "${RAW_PROJECT_DIR:-.}"
+        emit patch           "${RAW_PATCH:-false}"
+
+    - name: Warn about unauthenticated scope
+      if: inputs.registry-token == '' && inputs.registry-scope != ''
+      shell: bash
+      run: echo "::warning::registry-scope was provided but registry-token is empty; skipping private registry authentication"
+
+    - name: Write registry credentials
+      if: inputs.registry-token != ''
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.registry-token }}
+        SCOPES: ${{ inputs.registry-scope }}
+        HOST: ${{ inputs.registry-host }}
+      run: |
+        host="${HOST#https://}"
+        host="${host#http://}"
+        host="${host%/}"
+        echo "//${host}/:_authToken=${TOKEN}" >> "${HOME}/.npmrc"
+        for scope in ${SCOPES//,/ }; do
+          echo "@${scope#@}:registry=https://${host}/" >> "${HOME}/.npmrc"
+        done
+
+    - name: Provision pnpm
+      if: steps.opts.outputs.manager == 'pnpm'
+      uses: pnpm/action-setup@v6
+      with:
+        version: ${{ steps.opts.outputs.manager_version }}
+        run_install: false
+
+    - name: Provision Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ steps.opts.outputs.node }}
+        cache: ${{ steps.opts.outputs.manager }}
+        cache-dependency-path: |
+          ${{ steps.opts.outputs.project_dir }}/**/package-lock.json
+          ${{ steps.opts.outputs.project_dir }}/**/yarn.lock
+          ${{ steps.opts.outputs.project_dir }}/**/pnpm-lock.yaml
+
+    - name: Provision yarn
+      if: steps.opts.outputs.manager == 'yarn'
+      shell: bash
+      env:
+        WANTED: ${{ steps.opts.outputs.manager_version }}
+      run: |
+        corepack enable
+        spec="yarn@${WANTED}"
+        [ "$WANTED" != "latest" ] || spec="yarn@stable"
+        corepack prepare "$spec" --activate
+
+    - name: Provision npm
+      if: steps.opts.outputs.manager == 'npm'
+      shell: bash
+      env:
+        WANTED: ${{ steps.opts.outputs.manager_version }}
+      run: npm install --global "npm@${WANTED}"
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ steps.opts.outputs.project_dir }}
+      env:
+        MANAGER: ${{ steps.opts.outputs.manager }}
+      run: |
+        echo "Installing dependencies using ${MANAGER}"
+
+        if [ -r /proc/meminfo ]; then
+          mem_kb=$(sed -n 's/^MemTotal:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo)
+          mem_mb=$(( mem_kb / 1024 ))
+          export NODE_OPTIONS="--max-old-space-size=$(( mem_mb * 3 / 4 ))"
+          echo "NODE_OPTIONS=${NODE_OPTIONS}"
+        fi
+
+        case "$MANAGER" in
+          pnpm) pnpm install --frozen-lockfile ;;
+          yarn) yarn install --frozen-lockfile ;;
+          *)    npm ci ;;
+        esac
+
+    - name: Run patch-package
+      if: steps.opts.outputs.patch == 'true' && steps.opts.outputs.manager == 'npm'
+      shell: bash
+      working-directory: ${{ steps.opts.outputs.project_dir }}
+      run: npx patch-package
