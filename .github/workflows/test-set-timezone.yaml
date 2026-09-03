@@ -1,0 +1,170 @@
+# Tests for the set-timezone composite action.
+#
+# Triggered when the set-timezone action or this file changes.
+
+name: "Test: set-timezone"
+
+on:
+  push:
+    paths:
+      - "set-timezone/**"
+      - ".github/workflows/test-set-timezone.yaml"
+  pull_request:
+    paths:
+      - "set-timezone/**"
+      - ".github/workflows/test-set-timezone.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-metadata:
+    name: Validate action.yaml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: Check action.yaml against the GitHub Action schema
+        run: npx --yes @action-validator/cli set-timezone/action.yaml
+
+  explicit-timezone:
+    name: Explicit timezone (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./set-timezone
+        with:
+          timezone-linux: Asia/Singapore
+          timezone-macos: Asia/Singapore
+          timezone-windows: Singapore Standard Time
+
+      - name: Assert Linux timezone
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          actual="$(timedatectl show --property=Timezone --value)"
+          [ "$actual" = "Asia/Singapore" ] || { echo "::error::Expected Asia/Singapore, got '$actual'"; exit 1; }
+          [ "$(date +%z)" = "+0800" ] || { echo "::error::date reports offset $(date +%z), expected +0800"; exit 1; }
+
+      - name: Assert macOS timezone
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          actual="$(sudo systemsetup -gettimezone)"
+          [ "$actual" = "Time Zone: Asia/Singapore" ] || { echo "::error::Expected Asia/Singapore, got '$actual'"; exit 1; }
+          [ "$(date +%z)" = "+0800" ] || { echo "::error::date reports offset $(date +%z), expected +0800"; exit 1; }
+
+      - name: Assert Windows timezone
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $actual = tzutil /g
+          if ($actual -ne "Singapore Standard Time") { Write-Output "::error::Expected Singapore Standard Time, got '$actual'"; exit 1 }
+
+  default-timezone:
+    name: Default timezone (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Start from a non-default zone so the assertion proves the action
+      # changed something rather than observing the runner's initial state.
+      - uses: ./set-timezone
+        with:
+          timezone-linux: Asia/Tokyo
+          timezone-macos: Asia/Tokyo
+          timezone-windows: Tokyo Standard Time
+
+      - uses: ./set-timezone
+
+      - name: Assert Linux default (UTC)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          actual="$(timedatectl show --property=Timezone --value)"
+          [ "$actual" = "UTC" ] || { echo "::error::Expected UTC, got '$actual'"; exit 1; }
+
+      - name: Assert macOS default (GMT)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          actual="$(sudo systemsetup -gettimezone)"
+          [ "$actual" = "Time Zone: GMT" ] || { echo "::error::Expected GMT, got '$actual'"; exit 1; }
+
+      - name: Assert Windows default (UTC)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $actual = tzutil /g
+          if ($actual -ne "UTC") { Write-Output "::error::Expected UTC, got '$actual'"; exit 1 }
+
+  invalid-timezone:
+    name: Rejects invalid timezone (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: apply
+        uses: ./set-timezone
+        continue-on-error: true
+        with:
+          timezone-linux: Not/A_Zone
+          timezone-macos: Not/A_Zone
+          timezone-windows: Not A Zone
+
+      - name: Assert the action failed
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.apply.outcome }}
+        run: |
+          [ "$OUTCOME" = "failure" ] || { echo "::error::Expected the action to fail, outcome was '$OUTCOME'"; exit 1; }
+
+  linux-fallback:
+    # A plain container has no systemd, so timedatectl is unavailable and the
+    # action must take the /etc/localtime symlink path instead.
+    name: Linux fallback without timedatectl
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Install tzdata (not in the base image)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: apt-get update -q && apt-get install -y -q tzdata
+
+      - uses: actions/checkout@v7
+
+      - name: Confirm timedatectl is unavailable
+        shell: bash
+        run: |
+          if command -v timedatectl >/dev/null 2>&1 && timedatectl set-timezone UTC 2>/dev/null; then
+            echo "::error::timedatectl works here, so this job no longer exercises the fallback path"
+            exit 1
+          fi
+
+      - uses: ./set-timezone
+        with:
+          timezone-linux: Asia/Singapore
+
+      - name: Assert fallback result
+        shell: bash
+        run: |
+          target="$(readlink -f /etc/localtime)"
+          [ "$target" = "/usr/share/zoneinfo/Asia/Singapore" ] || { echo "::error::/etc/localtime points at '$target'"; exit 1; }
+          [ "$(cat /etc/timezone)" = "Asia/Singapore" ] || { echo "::error::/etc/timezone contains '$(cat /etc/timezone)'"; exit 1; }
+          [ "$(date +%z)" = "+0800" ] || { echo "::error::date reports offset $(date +%z), expected +0800"; exit 1; }
