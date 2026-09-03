@@ -58,8 +58,10 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          actual="$(sudo systemsetup -gettimezone)"
-          [ "$actual" = "Time Zone: Asia/Singapore" ] || { echo "::error::Expected Asia/Singapore, got '$actual'"; exit 1; }
+          sudo systemsetup -gettimezone
+          actual="$(readlink -f /etc/localtime)"
+          expected="$(readlink -f /var/db/timezone/zoneinfo/Asia/Singapore)"
+          [ "$actual" = "$expected" ] || { echo "::error::/etc/localtime points at '$actual', expected '$expected'"; exit 1; }
           [ "$(date +%z)" = "+0800" ] || { echo "::error::date reports offset $(date +%z), expected +0800"; exit 1; }
 
       - name: Assert Windows timezone
@@ -100,8 +102,11 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          actual="$(sudo systemsetup -gettimezone)"
-          [ "$actual" = "Time Zone: GMT" ] || { echo "::error::Expected GMT, got '$actual'"; exit 1; }
+          sudo systemsetup -gettimezone
+          actual="$(readlink -f /etc/localtime)"
+          expected="$(readlink -f /var/db/timezone/zoneinfo/GMT)"
+          [ "$actual" = "$expected" ] || { echo "::error::/etc/localtime points at '$actual', expected '$expected'"; exit 1; }
+          [ "$(date +%z)" = "+0000" ] || { echo "::error::date reports offset $(date +%z), expected +0000"; exit 1; }
 
       - name: Assert Windows default (UTC)
         if: runner.os == 'Windows'
