@@ -1,0 +1,121 @@
+# Tests for the setup-git-bot composite action.
+#
+# Triggered when the setup-git-bot action or this file changes.
+
+name: "Test: setup-git-bot"
+
+on:
+  push:
+    paths:
+      - "setup-git-bot/**"
+      - ".github/workflows/test-setup-git-bot.yaml"
+  pull_request:
+    paths:
+      - "setup-git-bot/**"
+      - ".github/workflows/test-setup-git-bot.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_NAME: "github-actions[bot]"
+  EXPECTED_EMAIL: "github-actions[bot]@users.noreply.github.com"
+
+jobs:
+  validate-metadata:
+    name: Validate action.yaml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: Check action.yaml against the GitHub Action schema
+        run: npx --yes @action-validator/cli setup-git-bot/action.yaml
+
+  configures-identity:
+    name: Configures identity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Confirm no identity is configured yet
+        shell: bash
+        run: |
+          if git config --global user.name >/dev/null || git config --global user.email >/dev/null; then
+            echo "::error::Runner already has a global git identity; this job can't prove the action set it"
+            exit 1
+          fi
+
+      - uses: ./setup-git-bot
+
+      - name: Assert global config values
+        shell: bash
+        run: |
+          name="$(git config --global user.name)"
+          email="$(git config --global user.email)"
+          [ "$name" = "$EXPECTED_NAME" ] || { echo "::error::user.name is '$name', expected '$EXPECTED_NAME'"; exit 1; }
+          [ "$email" = "$EXPECTED_EMAIL" ] || { echo "::error::user.email is '$email', expected '$EXPECTED_EMAIL'"; exit 1; }
+
+      # The checked-out repo carries its own local config from actions/checkout.
+      # Committing here proves the global identity is what git actually uses.
+      - name: Assert a commit is attributed to the bot
+        shell: bash
+        run: |
+          printf 'probe\n' > .bot-probe
+          git add .bot-probe
+          git commit -q -m "test: probe commit"
+
+          expected="$EXPECTED_NAME <$EXPECTED_EMAIL>"
+          author="$(git log -1 --format='%an <%ae>')"
+          committer="$(git log -1 --format='%cn <%ce>')"
+          [ "$author" = "$expected" ] || { echo "::error::Author is '$author', expected '$expected'"; exit 1; }
+          [ "$committer" = "$expected" ] || { echo "::error::Committer is '$committer', expected '$expected'"; exit 1; }
+
+  overrides-existing-identity:
+    # git config semantics don't vary by OS, so one runner is enough here.
+    name: Overrides an existing identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure a different identity first
+        shell: bash
+        run: |
+          git config --global user.name "Someone Else"
+          git config --global user.email "someone@example.com"
+
+      - uses: ./setup-git-bot
+
+      - name: Assert the bot identity replaced it
+        shell: bash
+        run: |
+          name="$(git config --global user.name)"
+          email="$(git config --global user.email)"
+          [ "$name" = "$EXPECTED_NAME" ] || { echo "::error::user.name is '$name', expected '$EXPECTED_NAME'"; exit 1; }
+          [ "$email" = "$EXPECTED_EMAIL" ] || { echo "::error::user.email is '$email', expected '$EXPECTED_EMAIL'"; exit 1; }
+
+          # Exactly one value each: the action must replace, not append.
+          [ "$(git config --global --get-all user.name | wc -l)" -eq 1 ] || { echo "::error::user.name has multiple values"; exit 1; }
+          [ "$(git config --global --get-all user.email | wc -l)" -eq 1 ] || { echo "::error::user.email has multiple values"; exit 1; }
+
+  idempotent:
+    name: Running twice is a no-op
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./setup-git-bot
+      - name: Snapshot global config
+        shell: bash
+        run: git config --global --list | sort > "$RUNNER_TEMP/first.txt"
+      - uses: ./setup-git-bot
+      - name: Assert the second run changed nothing
+        shell: bash
+        run: |
+          git config --global --list | sort > "$RUNNER_TEMP/second.txt"
+          diff "$RUNNER_TEMP/first.txt" "$RUNNER_TEMP/second.txt" || { echo "::error::Global git config changed on the second run"; exit 1; }

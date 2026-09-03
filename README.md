@@ -3,12 +3,14 @@
 Reusable composite actions for GitHub workflows. Each action lives in its own directory with its own README, runs on Linux, macOS, and Windows, and ships with a workflow that tests it on all three.
 
 [![Test: set-timezone](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml)
+[![Test: setup-git-bot](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml)
 
 ## Actions
 
 | Action | Description | Status |
 | --- | --- | --- |
 | [`set-timezone`](set-timezone/README.md) | Set the runner's system timezone | [![Test: set-timezone](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml) |
+| [`setup-git-bot`](setup-git-bot/README.md) | Configure git to commit as `github-actions[bot]` | [![Test: setup-git-bot](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml) |
 
 ## Usage
 
