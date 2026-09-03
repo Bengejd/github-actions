@@ -1,0 +1,208 @@
+# Tests for the setup-node-with-cache composite action.
+#
+# Triggered when the action, its fixtures, or this file changes. The fixtures
+# under .github/fixtures/setup-node-with-cache are tiny projects with committed
+# lockfiles, one per package manager, so the install path runs for real.
+
+name: "Test: setup-node-with-cache"
+
+on:
+  push:
+    paths:
+      - "setup-node-with-cache/**"
+      - ".github/fixtures/setup-node-with-cache/**"
+      - ".github/workflows/test-setup-node-with-cache.yaml"
+  pull_request:
+    paths:
+      - "setup-node-with-cache/**"
+      - ".github/fixtures/setup-node-with-cache/**"
+      - ".github/workflows/test-setup-node-with-cache.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FIXTURES: .github/fixtures/setup-node-with-cache
+
+jobs:
+  validate-metadata:
+    name: Validate action.yaml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: Check action.yaml against the GitHub Action schema
+        run: npx --yes @action-validator/cli setup-node-with-cache/action.yaml
+
+  installs:
+    name: Installs with ${{ matrix.manager }}
+    strategy:
+      fail-fast: false
+      matrix:
+        manager: [npm, yarn, pnpm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: setup
+        uses: ./setup-node-with-cache
+        with:
+          package-manager: ${{ matrix.manager }}
+          working-directory: ${{ env.FIXTURES }}/${{ matrix.manager }}
+
+      - name: Assert Node.js and the package manager are on PATH
+        shell: bash
+        env:
+          MANAGER: ${{ matrix.manager }}
+          NODE_OUTPUT: ${{ steps.setup.outputs.node-version }}
+        run: |
+          actual="$(node --version)"
+          case "$actual" in
+            v26.*) ;;
+            *) echo "::error::Expected Node 26, got $actual"; exit 1 ;;
+          esac
+          [ -n "$NODE_OUTPUT" ] || { echo "::error::node-version output is empty"; exit 1; }
+          echo "$MANAGER $("$MANAGER" --version)"
+
+      - name: Assert dependencies were installed
+        shell: bash
+        working-directory: ${{ env.FIXTURES }}/${{ matrix.manager }}
+        run: |
+          [ -d node_modules/ms ] || { echo "::error::node_modules/ms is missing"; exit 1; }
+          node -e "require('ms')"
+
+      - name: Assert cache-hit output is a boolean
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.setup.outputs.cache-hit }}
+        run: |
+          case "$CACHE_HIT" in
+            true|false) echo "cache-hit=$CACHE_HIT" ;;
+            *) echo "::error::cache-hit output is '$CACHE_HIT', expected true or false"; exit 1 ;;
+          esac
+
+  cross-platform:
+    name: Installs with npm (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./setup-node-with-cache
+        with:
+          package-manager: npm
+          working-directory: ${{ env.FIXTURES }}/npm
+
+      - name: Assert dependencies were installed
+        shell: bash
+        working-directory: ${{ env.FIXTURES }}/npm
+        run: |
+          case "$(node --version)" in
+            v26.*) ;;
+            *) echo "::error::Expected Node 26, got $(node --version)"; exit 1 ;;
+          esac
+          [ -d node_modules/ms ] || { echo "::error::node_modules/ms is missing"; exit 1; }
+          node -e "require('ms')"
+
+  warm-cache:
+    name: Warm the dependency cache
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./setup-node-with-cache
+        with:
+          package-manager: npm
+          working-directory: ${{ env.FIXTURES }}/npm
+
+  restores-cache:
+    # setup-node saves the cache in its post step, so a second job that runs
+    # after the first one has finished must see a hit.
+    name: Restores the dependency cache
+    needs: warm-cache
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: setup
+        uses: ./setup-node-with-cache
+        with:
+          package-manager: npm
+          working-directory: ${{ env.FIXTURES }}/npm
+
+      - name: Assert the cache was hit
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.setup.outputs.cache-hit }}
+        run: |
+          [ "$CACHE_HIT" = "true" ] || { echo "::error::Expected a cache hit after warm-cache, got '$CACHE_HIT'"; exit 1; }
+
+  registry-credentials:
+    name: Writes private registry credentials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The host carries a protocol and trailing slash on purpose: the action
+      # must normalize them. The scopes mix a leading @ with a bare name and a
+      # comma separator with a space.
+      - uses: ./setup-node-with-cache
+        with:
+          package-manager: npm
+          working-directory: ${{ env.FIXTURES }}/npm
+          registry-token: not-a-real-token
+          registry-scope: "@acme, beta"
+          registry-host: https://registry.example.com/
+
+      - name: Assert .npmrc contents
+        shell: bash
+        run: |
+          expect() {
+            grep -qxF "$1" "$HOME/.npmrc" || { echo "::error::Missing line in ~/.npmrc: $1"; cat "$HOME/.npmrc"; exit 1; }
+          }
+          expect "//registry.example.com/:_authToken=not-a-real-token"
+          expect "@acme:registry=https://registry.example.com/"
+          expect "@beta:registry=https://registry.example.com/"
+
+  applies-patches:
+    name: Applies patch-package patches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./setup-node-with-cache
+        with:
+          package-manager: npm
+          working-directory: ${{ env.FIXTURES }}/npm-patch
+          patch-package: true
+
+      - name: Assert the patch was applied
+        shell: bash
+        working-directory: ${{ env.FIXTURES }}/npm-patch
+        run: |
+          node -e "process.exit(require('ms').patched === true ? 0 : 1)"
+
+  rejects-unknown-manager:
+    name: Rejects an unknown package manager
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: setup
+        uses: ./setup-node-with-cache
+        continue-on-error: true
+        with:
+          package-manager: bun
+          working-directory: ${{ env.FIXTURES }}/npm
+
+      - name: Assert the action failed
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+        run: |
+          [ "$OUTCOME" = "failure" ] || { echo "::error::Expected the action to fail, outcome was '$OUTCOME'"; exit 1; }

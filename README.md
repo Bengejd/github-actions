@@ -4,6 +4,7 @@ Reusable composite actions for GitHub workflows. Each action lives in its own di
 
 [![Test: set-timezone](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml)
 [![Test: setup-git-bot](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml)
+[![Test: setup-node-with-cache](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-node-with-cache.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-node-with-cache.yaml)
 
 ## Actions
 
@@ -11,6 +12,7 @@ Reusable composite actions for GitHub workflows. Each action lives in its own di
 | --- | --- | --- |
 | [`set-timezone`](set-timezone/README.md) | Set the runner's system timezone | [![Test: set-timezone](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-set-timezone.yaml) |
 | [`setup-git-bot`](setup-git-bot/README.md) | Configure git to commit as `github-actions[bot]` | [![Test: setup-git-bot](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-git-bot.yaml) |
+| [`setup-node-with-cache`](setup-node-with-cache/README.md) | Install Node.js and npm, yarn, or pnpm with a cached, frozen-lockfile install | [![Test: setup-node-with-cache](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-node-with-cache.yaml/badge.svg)](https://github.com/Bengejd/github-actions/actions/workflows/test-setup-node-with-cache.yaml) |
 
 ## Usage
 

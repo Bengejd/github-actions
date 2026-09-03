@@ -1,0 +1,10 @@
+diff --git a/node_modules/ms/index.js b/node_modules/ms/index.js
+index ea734fb..ada2ffb 100644
+--- a/node_modules/ms/index.js
++++ b/node_modules/ms/index.js
+@@ -160,3 +160,5 @@ function plural(ms, msAbs, n, name) {
+   var isPlural = msAbs >= n * 1.5;
+   return Math.round(ms / n) + ' ' + name + (isPlural ? 's' : '');
+ }
++
++module.exports.patched = true;
