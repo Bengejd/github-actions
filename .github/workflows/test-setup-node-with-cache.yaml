@@ -193,7 +193,7 @@ jobs:
           node -e "process.exit(require('ms').patched === true ? 0 : 1)"
 
   uses-package-json-field:
-    # The fixture pins pnpm@11.12.0 through the packageManager field and has no package-manager input.
+    # The fixture pins pnpm@11.25.0 through the packageManager field and has no package-manager input.
     name: Uses the packageManager field
     runs-on: ubuntu-latest
     steps:
@@ -211,7 +211,7 @@ jobs:
         run: |
           [ "$MANAGER_OUTPUT" = "pnpm" ] || { echo "::error::package-manager output is '$MANAGER_OUTPUT', expected pnpm"; exit 1; }
           actual="$(pnpm --version)"
-          [ "$actual" = "11.12.0" ] || { echo "::error::pnpm is $actual, expected 11.12.0 from the packageManager field"; exit 1; }
+          [ "$actual" = "11.25.0" ] || { echo "::error::pnpm is $actual, expected 11.25.0 from the packageManager field"; exit 1; }
 
   overrides-detection:
     # The fixture has both an npm and a yarn lockfile. Detection alone would

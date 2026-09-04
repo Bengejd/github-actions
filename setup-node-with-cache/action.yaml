@@ -15,7 +15,7 @@ inputs:
     required: false
     default: ""
   package-manager-version:
-    description: "Release of the package manager (example: 11.12.0). \"latest\" uses the version pinned by the packageManager field in package.json when there is one, otherwise the newest available."
+    description: "Release of the package manager (example: 11.25.0). \"latest\" uses the version pinned by the packageManager field in package.json when there is one, otherwise the newest available."
     required: false
     default: "latest"
   working-directory:
@@ -75,7 +75,7 @@ runs:
           exit 1
         fi
 
-        # "pnpm@11.12.0+sha512..." -> manager "pnpm", version "11.12.0"
+        # "pnpm@11.25.0+sha512..." -> manager "pnpm", version "11.25.0"
         field_spec="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$project_dir/package.json" | head -n 1)"
         field_spec="${field_spec%%+*}"
         field_manager="${field_spec%%@*}"

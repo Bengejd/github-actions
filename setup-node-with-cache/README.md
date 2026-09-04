@@ -70,7 +70,7 @@ For production workflows, pin to a commit SHA instead of a branch so the behavio
 **Package manager detection.** The action resolves the package manager in this order and stops at the first match:
 
 1. The `package-manager` input, when set.
-2. The `packageManager` field in `package.json`, for example `"packageManager": "pnpm@11.12.0"`.
+2. The `packageManager` field in `package.json`, for example `"packageManager": "pnpm@11.25.0"`.
 3. The lockfile in `working-directory`: `pnpm-lock.yaml`, `yarn.lock`, or `package-lock.json` (also `npm-shrinkwrap.json`).
 
 A project with more than one lockfile and no input fails with an error naming them, as does a project with none. Guessing in either case would hide a real problem in the repository. When `package-manager-version` is `latest` and the `packageManager` field pins a version of the same manager, that pinned version is used. This is also what `pnpm/action-setup` requires, since it refuses to run when the two disagree.
@@ -97,7 +97,7 @@ The [test workflow](../.github/workflows/test-setup-node-with-cache.yaml) runs w
 | Installs with npm, yarn, pnpm (explicit and detected) | Node 26 and the manager are on `PATH`, the dependency resolves from the fixture directory, and the `package-manager` output matches, whether the manager was passed in or detected from the lockfile. |
 | Installs with npm on macOS and Windows | The npm path works outside Linux. |
 | Warm and restore the cache | A second job after a warming job reports `cache-hit: true`. |
-| Uses the packageManager field | With no input, a fixture pinning `pnpm@11.12.0` in `package.json` gets that manager at that exact version. |
+| Uses the packageManager field | With no input, a fixture pinning `pnpm@11.25.0` in `package.json` gets that manager at that exact version. |
 | Explicit input overrides detection | A fixture with both npm and yarn lockfiles installs with npm when told to. |
 | Writes private registry credentials | `~/.npmrc` has the expected auth and scope lines, with the host normalized and both scope spellings accepted. |
 | Applies patch-package patches | A committed patch to the fixture's dependency is visible at require time. |
