@@ -4,7 +4,7 @@
 
 Installs Node.js and your package manager, restores the dependency cache keyed on the lockfile, and runs a frozen-lockfile install. One step replaces the usual four, and every project in an organization gets the same install behavior.
 
-Works on Linux, macOS, and Windows with npm, yarn, or pnpm.
+Works on Linux, macOS, and Windows with npm, yarn, or pnpm. The package manager is detected from the project, so most callers need no inputs at all.
 
 ## Usage
 
@@ -12,10 +12,10 @@ Works on Linux, macOS, and Windows with npm, yarn, or pnpm.
 steps:
   - uses: actions/checkout@v7
   - uses: Bengejd/github-actions/setup-node-with-cache@main
-  - run: pnpm test
+  - run: npm test
 ```
 
-Pick a package manager and pin its version:
+Choose the package manager explicitly and pin its version:
 
 ```yaml
 - uses: Bengejd/github-actions/setup-node-with-cache@main
@@ -49,8 +49,8 @@ For production workflows, pin to a commit SHA instead of a branch so the behavio
 | Input | Default | Description |
 | --- | --- | --- |
 | `node-version` | `26` | Node.js release to install. Accepts anything `actions/setup-node` accepts. |
-| `package-manager` | `pnpm` | `npm`, `yarn`, or `pnpm`. Any other value fails the step. |
-| `package-manager-version` | `latest` | Release of the package manager. `latest` resolves to the newest available. |
+| `package-manager` | detected | `npm`, `yarn`, or `pnpm`. When empty, detected from the project as described under [Behavior](#behavior). Any other value fails the step. |
+| `package-manager-version` | `latest` | Release of the package manager. `latest` uses the version pinned by the `packageManager` field in `package.json` when there is one, otherwise the newest available. |
 | `working-directory` | `.` | Directory that contains `package.json` and the lockfile. |
 | `patch-package` | `false` | Run `patch-package` after the install. Requires `patch-package` in `devDependencies` and a `patches` directory. |
 | `registry-token` | | Auth token for a private npm registry. Pass a secret. When empty, no registry authentication is configured. |
@@ -61,10 +61,19 @@ For production workflows, pin to a commit SHA instead of a branch so the behavio
 
 | Output | Description |
 | --- | --- |
+| `package-manager` | The package manager that was used: `npm`, `yarn`, or `pnpm`. Useful for later steps such as `${{ steps.setup.outputs.package-manager }} test`. |
 | `cache-hit` | `true` when the dependency cache was restored, otherwise `false`. |
 | `node-version` | The Node.js version that was installed, for example `26.5.0`. |
 
 ## Behavior
+
+**Package manager detection.** The action resolves the package manager in this order and stops at the first match:
+
+1. The `package-manager` input, when set.
+2. The `packageManager` field in `package.json`, for example `"packageManager": "pnpm@11.12.0"`.
+3. The lockfile in `working-directory`: `pnpm-lock.yaml`, `yarn.lock`, or `package-lock.json` (also `npm-shrinkwrap.json`).
+
+A project with more than one lockfile and no input fails with an error naming them, as does a project with none. Guessing in either case would hide a real problem in the repository. When `package-manager-version` is `latest` and the `packageManager` field pins a version of the same manager, that pinned version is used. This is also what `pnpm/action-setup` requires, since it refuses to run when the two disagree.
 
 **Frozen installs.** The install runs `npm ci`, `yarn install --immutable` (or `--frozen-lockfile` on Yarn 1), or `pnpm install --frozen-lockfile`. If `package.json` and the lockfile disagree, the step fails rather than silently rewriting the lockfile. Commit an updated lockfile to fix it.
 
@@ -85,9 +94,11 @@ The [test workflow](../.github/workflows/test-setup-node-with-cache.yaml) runs w
 | Job | What it checks |
 | --- | --- |
 | Validate action.yaml | The metadata file passes the GitHub Action schema. |
-| Installs with npm, yarn, pnpm | Node 26 and the requested manager are on `PATH`, the dependency resolves from the fixture directory, and both outputs are populated. |
+| Installs with npm, yarn, pnpm (explicit and detected) | Node 26 and the manager are on `PATH`, the dependency resolves from the fixture directory, and the `package-manager` output matches, whether the manager was passed in or detected from the lockfile. |
 | Installs with npm on macOS and Windows | The npm path works outside Linux. |
 | Warm and restore the cache | A second job after a warming job reports `cache-hit: true`. |
+| Uses the packageManager field | With no input, a fixture pinning `pnpm@11.12.0` in `package.json` gets that manager at that exact version. |
+| Explicit input overrides detection | A fixture with both npm and yarn lockfiles installs with npm when told to. |
 | Writes private registry credentials | `~/.npmrc` has the expected auth and scope lines, with the host normalized and both scope spellings accepted. |
 | Applies patch-package patches | A committed patch to the fixture's dependency is visible at require time. |
-| Rejects an unknown package manager | `package-manager: bun` fails the step. |
+| Rejects bad configuration | An unknown manager, two lockfiles without an input, and a project with no lockfile each fail the step. |

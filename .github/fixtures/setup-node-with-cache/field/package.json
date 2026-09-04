@@ -1,0 +1,8 @@
+{
+  "name": "fixture-field",
+  "private": true,
+  "packageManager": "pnpm@11.12.0",
+  "dependencies": {
+    "ms": "2.1.3"
+  }
+}

@@ -11,11 +11,11 @@ inputs:
     required: false
     default: "26"
   package-manager:
-    description: "Package manager to use: npm, yarn, or pnpm."
+    description: "Package manager to use: npm, yarn, or pnpm. When empty, detected from the packageManager field in package.json, then from the lockfile in working-directory."
     required: false
-    default: "pnpm"
+    default: ""
   package-manager-version:
-    description: "Release of the package manager (example: 11.12.0). \"latest\" resolves to the newest available."
+    description: "Release of the package manager (example: 11.12.0). \"latest\" uses the version pinned by the packageManager field in package.json when there is one, otherwise the newest available."
     required: false
     default: "latest"
   working-directory:
@@ -40,6 +40,9 @@ inputs:
     default: "npm.pkg.github.com"
 
 outputs:
+  package-manager:
+    description: "The package manager that was used: npm, yarn, or pnpm."
+    value: ${{ steps.opts.outputs.manager }}
   cache-hit:
     description: "Whether the dependency cache was restored (\"true\" or \"false\")."
     value: ${{ steps.node.outputs.cache-hit }}
@@ -50,9 +53,12 @@ outputs:
 runs:
   using: composite
   steps:
+    # Resolve the package manager, in order of precedence: the package-manager
+    # input, the packageManager field in package.json, then whichever lockfile
+    # is present. A version of "latest" defers to the packageManager field so
+    # the action never contradicts a pin the repository already carries.
     # Inputs always carry their defaults, but a caller can pass an empty string
-    # (for example from an unset variable). Fall back to the documented default
-    # in that case, and reject package managers this action doesn't know.
+    # (for example from an unset variable), so every fallback is explicit.
     - id: opts
       name: Resolve options
       shell: bash
@@ -63,20 +69,68 @@ runs:
         RAW_PROJECT_DIR: ${{ inputs.working-directory }}
         RAW_PATCH: ${{ inputs.patch-package }}
       run: |
-        manager="${RAW_MANAGER:-pnpm}"
+        project_dir="${RAW_PROJECT_DIR:-.}"
+        if [ ! -f "$project_dir/package.json" ]; then
+          echo "::error::No package.json in working-directory '$project_dir'."
+          exit 1
+        fi
+
+        # "pnpm@11.12.0+sha512..." -> manager "pnpm", version "11.12.0"
+        field_spec="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$project_dir/package.json" | head -n 1)"
+        field_spec="${field_spec%%+*}"
+        field_manager="${field_spec%%@*}"
+        field_version=""
+        [ "$field_spec" = "$field_manager" ] || field_version="${field_spec#*@}"
+
+        if [ -n "$RAW_MANAGER" ]; then
+          manager="$RAW_MANAGER"
+          source="the package-manager input"
+        elif [ -n "$field_manager" ]; then
+          manager="$field_manager"
+          source="the packageManager field in package.json"
+        else
+          found=""
+          [ -f "$project_dir/pnpm-lock.yaml" ] && found="$found pnpm"
+          [ -f "$project_dir/yarn.lock" ] && found="$found yarn"
+          { [ -f "$project_dir/package-lock.json" ] || [ -f "$project_dir/npm-shrinkwrap.json" ]; } && found="$found npm"
+          set -- $found
+          case $# in
+            1)
+              manager="$1"
+              source="the lockfile in '$project_dir'"
+              ;;
+            0)
+              echo "::error::No lockfile found in '$project_dir'. Commit one, add a packageManager field to package.json, or set the package-manager input."
+              exit 1
+              ;;
+            *)
+              echo "::error::Found lockfiles for$found in '$project_dir'. Set the package-manager input to choose one."
+              exit 1
+              ;;
+          esac
+        fi
+
         case "$manager" in
           npm|yarn|pnpm) ;;
           *)
-            echo "::error::Unsupported package-manager '$manager'. Use npm, yarn, or pnpm."
+            echo "::error::Unsupported package manager '$manager' (from $source). Use npm, yarn, or pnpm."
             exit 1
             ;;
         esac
 
+        version="${RAW_MANAGER_VERSION:-latest}"
+        if [ "$version" = "latest" ] && [ "$manager" = "$field_manager" ] && [ -n "$field_version" ]; then
+          version="$field_version"
+          echo "Using $manager@$version from $source, version pinned by packageManager in package.json"
+        else
+          echo "Using $manager@$version from $source"
+        fi
+
         emit() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
         emit node            "${RAW_NODE:-26}"
         emit manager         "$manager"
-        emit manager_version "${RAW_MANAGER_VERSION:-latest}"
-        emit project_dir     "${RAW_PROJECT_DIR:-.}"
+        emit manager_version "$version"
+        emit project_dir     "$project_dir"
         emit patch           "${RAW_PATCH:-false}"
 
     - name: Warn about unauthenticated scope
